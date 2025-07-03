@@ -2,3 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Map cache
+rosm.cache
+
+# Mac hidden files
+.DS_Store

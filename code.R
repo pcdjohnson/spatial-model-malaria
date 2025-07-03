@@ -1,24 +1,41 @@
+rm(list = ls())
+graphics.off()
+
 # Installing INLA
 
-install.packages("INLA", repos = "https://inla.r-inla-download.org/R/stable", dep = TRUE)
+#install.packages("INLA", repos = "https://inla.r-inla-download.org/R/stable", dep = TRUE)
 
 # Loading R packages
 
 library(INLA)
+library(fmesher)
 library(leaflet)
 library(viridis)
 library(ggplot2)
 library(cowplot)
+library(sf)
+library(ggspatial)
+
 
 # Reading data
 
-d <- read.csv("https://raw.githubusercontent.com/Paula-Moraga/spatial-model-malaria/master/d.csv")
-dp <- read.csv("https://raw.githubusercontent.com/Paula-Moraga/spatial-model-malaria/master/dp.csv")
+d <- read.csv("d.csv")
+dp <- read.csv("dp.csv")
 
 # Fitting model
 
 coo <- cbind(d$longitude, d$latitude)
+
+#' Make a spatial data frame version of the prevalence data, 
+#' solely for making a map
+d.sf <- st_transform(st_as_sf(d, coords = c("longitude", "latitude"), crs = 4326), crs = 3857)
+head(d.sf$geometry)
+
 mesh <- inla.mesh.2d(loc = coo, max.edge = c(0.1, 5), cutoff = 0.01)
+
+plot(mesh)
+
+
 spde <- inla.spde2.matern(mesh = mesh, alpha = 2, constr = TRUE)
 indexs <- inla.spde.make.index("s", spde$n.spde)
 A <- inla.spde.make.A(mesh = mesh, loc = coo)
@@ -44,13 +61,27 @@ formula <- y ~ 0 + b0 + alt + temp + prec + hum + pop + aqua + f(s, model = spde
 
 res <- inla(formula, family = "binomial", Ntrials = numtrials,
             control.family = list(link = "logit"),
+            control.compute = list(config = TRUE, return.marginals.predictor = TRUE, waic = TRUE),
             data = inla.stack.data(stk.full),
             control.predictor = list(compute = TRUE, link = 1, A = inla.stack.A(stk.full)))
 
 
 # Results
 
+res$waic$waic
+
 summary(res)
+
+#' How much variaton are the fixed effects explaining?
+X <- model.matrix(~ alt + temp + prec + hum + pop + dist_aqua, data = d)
+B <- res$summary.fixed$mean
+var(X %*% B)
+
+
+#' Calculate the exceedance probabilities from Table 1
+covariates <- c("alt", "temp", "prec", "hum", "pop", "aqua")
+cbind(sapply(covariates, function(v) 1 - inla.pmarginal(q = 0, marginal = res$marginals.fixed[[v]])))
+
 
 index <- inla.stack.index(stack = stk.full, tag = "pred")$data
 
@@ -137,5 +168,25 @@ gsd <- ggplot(df, aes(x = x, y = y, fill = sd_s)) + geom_raster() +
 plot_grid(gmean, gsd)
 
 
+#' Quick way to get at the priors 
+res.na <- res
+res.na$.args$data$y <- rep(NA, length(res.na$.args$data$y))
+res.na <- inla.rerun(res.na, plain = TRUE)
+summary(res.na)
+exp(res.na$summary.hyperpar[,-2])
 
+#' Plot the prior and posterior densities of the hyperparameters
+par(mfrow = c(2, 1))
+plot(inla.spde.result(res, "s", spde)$marginals.range.nominal$range.nominal.1, type = "l",
+     xlim = c(0, 50), , main = "Spatial field range")
+lines(inla.spde.result(res.na, "s", spde)$marginals.range.nominal$range.nominal.1, 
+      col = 2)
+abline(h = 0, col = grey(0.5))
+legend("topright", legend = c("Prior", "Posterior"), lty = 1, col = 2:1)
 
+plot(inla.spde.result(res, "s", spde)$marginals.variance.nominal$variance.nominal.1, type = "l",
+     xlim = c(0, 10), main = "Spatial field variance")
+lines(inla.spde.result(res.na, "s", spde)$marginals.variance.nominal$variance.nominal.1, 
+      col = 2)
+abline(h = 0, col = grey(0.5))
+legend("topright", legend = c("Prior", "Posterior"), lty = 1, col = 2:1)

@@ -7,3 +7,6 @@ Data `d.csv` contains prevalence survey data for Mozambique and selected covaria
 Data `dp.csv` specifies the locations where we wish to predict the prevalence together with values of covariates in these locations.
 
 Code `code.R` contains the R code to run the analysis and visualize the results.
+
+Note added by Paul Johnson 2025-07-02: I've made minimal changes to code.R to make it run on the version of INLA I'm using (Version 24.12.11). 
+I've also made a new script called codePJ.R which has quite a few changes to the model as well as some new plots.
